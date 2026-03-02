@@ -5,14 +5,17 @@ import mongoose from "mongoose";
 
 import { projectRouter } from "./routes/project.routes";
 import { runRouter } from "./routes/run.routes";
+import { resultRouter } from "./routes/result.routes";
 
 dotenv.config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
 app.use("/projects", projectRouter);
 app.use("/runs", runRouter);
+app.use("/", resultRouter);
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "api" });
