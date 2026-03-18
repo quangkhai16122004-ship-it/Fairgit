@@ -14,24 +14,27 @@ export type TopFile = {
 };
 
 export type ResultDoc = {
-    runId: Types.ObjectId;
-    projectId: Types.ObjectId;
-    authorEmail: string;
-    authorName: string;
-    commitCount: number;
-    createdAt: Date;
-    updatedAt: Date;
-    scoreTotal: number;
-    scoreConsistency: number;
-    scoreImpact: number;
-    scoreClean: number;
+  runId: Types.ObjectId;
+  projectId: Types.ObjectId;
+  authorEmail: string;
+  authorName: string;
+  commitCount: number;
+  createdAt: Date;
+  updatedAt: Date;
+  scoreTotal: number;
+  scoreConsistency: number;
+  scoreImpact: number;
+  scoreClean: number;
 
-    coreTouches: number;
-    noiseTouches: number;
-    totalTouches: number;
+  coreTouches: number;
+  testTouches: number;
+  docTouches: number;
+  otherTouches: number;
+  noiseTouches: number;
+  totalTouches: number;
 
-    evidenceCommits: EvidenceCommit[];
-    topFiles: TopFile[];
+  evidenceCommits: EvidenceCommit[];
+  topFiles: TopFile[];
 };
 
 
@@ -50,6 +53,9 @@ const ResultSchema = new Schema<ResultDoc>(
     scoreImpact: { type: Number, required: true, min: 0, default: 0 },
     scoreClean: { type: Number, required: true, min: 0, default: 0 },
     coreTouches: { type: Number, required: true, min: 0, default: 0 },
+    testTouches: { type: Number, required: true, min: 0, default: 0 },
+    docTouches: { type: Number, required: true, min: 0, default: 0 },
+    otherTouches: { type: Number, required: true, min: 0, default: 0 },
     noiseTouches: { type: Number, required: true, min: 0, default: 0 },
     totalTouches: { type: Number, required: true, min: 0, default: 0 },
 
