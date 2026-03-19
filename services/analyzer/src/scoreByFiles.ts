@@ -1,22 +1,35 @@
 import { CommitItem } from "./commitExtract";
 import { getTouchedFiles } from "./fileTouch";
 import { tagFile } from "./fileRules";
+import { buildEvidenceForAuthor } from "./evidence";
+import type { EvidenceCommit, TopFile } from "./evidence";
 
 export type ScoreRow = {
   authorEmail: string;
   authorName: string;
   commitCount: number;
 
+  // touches breakdown
   coreTouches: number;
+  testTouches: number;
+  docTouches: number;
+  otherTouches: number;
   noiseTouches: number;
-
-  scoreConsistency: number; // 0..30
-  scoreImpact: number;      // 0..50
-  scoreClean: number;       // 0..20
-  scoreTotal: number;       // 0..100
-
   totalTouches: number;
+
+  // scores
+  scoreConsistency: number; // 0..30
+  scoreImpact: number; // 0..50
+  scoreClean: number; // 0..20
+  scoreTotal: number; // 0..100
+
+  evidenceCommits: EvidenceCommit[];
+  topFiles: TopFile[];
 };
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
 
 function weekKey(iso: string) {
   const d = new Date(iso);
@@ -26,11 +39,31 @@ function weekKey(iso: string) {
   return `${d.getFullYear()}-${week}`;
 }
 
+function computeImpactRaw(t: {
+  coreTouches: number;
+  testTouches: number;
+  docTouches: number;
+  otherTouches: number;
+  noiseTouches: number;
+}) {
+  // Core là chính.
+  // Test có giá trị phụ.
+  // Doc/other có giá trị rất nhỏ.
+  // Noise bị trừ nhẹ.
+  return (
+    1.0 * t.coreTouches +
+    0.35 * t.testTouches +
+    0.08 * t.docTouches +
+    0.03 * t.otherTouches -
+    0.1 * t.noiseTouches
+  );
+}
+
 /**
- * Chấm điểm dựa trên:
- * - Consistency: số tuần hoạt động (0..30)
- * - Impact: số lần chạm file core (0..50)
- * - Clean: tỷ lệ "không noise" (0..20)
+ * Chấm điểm:
+ * - Consistency (0..30): số tuần có hoạt động trong 90 ngày (chuẩn hoá theo 13 tuần)
+ * - Impact (0..50): trọng số theo loại file chạm (core là chính, test/doc/other chỉ phụ)
+ * - Clean (0..20): tỷ lệ core trong tổng touches + phạt theo bậc nếu có noise
  */
 export async function scoreFromCommitsWithFiles(repoDir: string, commits: CommitItem[]): Promise<ScoreRow[]> {
   // gom theo email
@@ -42,69 +75,111 @@ export async function scoreFromCommitsWithFiles(repoDir: string, commits: Commit
     byEmail.set(c.authorEmail, cur);
   }
 
-  // bước 1: tính touches core/noise cho từng người
   const temp: Array<{
     email: string;
     name: string;
     commitCount: number;
     weeksActive: number;
+
     coreTouches: number;
+    testTouches: number;
+    docTouches: number;
+    otherTouches: number;
     noiseTouches: number;
     totalTouches: number;
+
+    evidenceCommits: EvidenceCommit[];
+    topFiles: TopFile[];
   }> = [];
 
   for (const [email, v] of byEmail.entries()) {
     const weeks = new Set(v.commits.map((c) => weekKey(c.date)));
 
     let coreTouches = 0;
+    let testTouches = 0;
+    let docTouches = 0;
+    let otherTouches = 0;
     let noiseTouches = 0;
     let totalTouches = 0;
 
-    // Lấy file touched cho từng commit (chạy lần lượt để đơn giản)
     for (const c of v.commits) {
       const files = await getTouchedFiles(repoDir, c.hash);
+
       for (const f of files) {
         totalTouches += 1;
         const tag = tagFile(f);
+
         if (tag === "core") coreTouches += 1;
+        else if (tag === "test") testTouches += 1;
+        else if (tag === "doc") docTouches += 1;
         else if (tag === "noise") noiseTouches += 1;
+        else otherTouches += 1;
       }
     }
 
+    const { evidenceCommits, topFiles } = await buildEvidenceForAuthor(repoDir, v.commits);
+
     temp.push({
-        email,
-        name: v.name,
-        commitCount: v.commits.length,
-        weeksActive: weeks.size,
-        coreTouches,
-        noiseTouches,
-        totalTouches,
+      email,
+      name: v.name,
+      commitCount: v.commits.length,
+      weeksActive: weeks.size,
+
+      coreTouches,
+      testTouches,
+      docTouches,
+      otherTouches,
+      noiseTouches,
+      totalTouches,
+
+      evidenceCommits,
+      topFiles,
     });
   }
 
-  // chuẩn hoá để ra điểm 0..50
-  const maxCoreTouches = Math.max(1, ...temp.map((t) => t.coreTouches));
+  // chỉ dùng những người có core/test thật để làm mốc normalize
+  const impactRawList = temp.map((t) => Math.max(0, computeImpactRaw(t)));
+  const impactRawListForBaseline = temp
+    .filter((t) => t.coreTouches > 0 || t.testTouches > 0)
+    .map((t) => Math.max(0, computeImpactRaw(t)));
+
+  const maxImpactRaw =
+    impactRawListForBaseline.length > 0
+      ? Math.max(1, ...impactRawListForBaseline)
+      : Math.max(1, ...impactRawList);
 
   const rows: ScoreRow[] = temp.map((t) => {
-    // Consistency: 90 ngày ~ 13 tuần
+    // -------- Consistency (0..30)
     const consistencyRatio = Math.min(1, t.weeksActive / 13);
     const scoreConsistency = Math.round(consistencyRatio * 30);
 
-    // Impact: dựa trên coreTouches (chuẩn hoá theo người cao nhất)
-    // Impact: core được tính mạnh, other (không noise) vẫn có giá trị nhưng thấp hơn.
-    // nonNoiseTouches = total - noise
-    const nonNoiseTouches = Math.max(0, t.totalTouches - t.noiseTouches);
-
-    // chuẩn hoá impact theo "coreTouches" là chính (và có thêm nonNoise nhỏ)
-    const impactRaw = t.coreTouches + 0.25 * nonNoiseTouches;
-    const maxImpactRaw = Math.max(1, ...temp.map(x => (x.coreTouches + 0.25 * Math.max(0, x.totalTouches - x.noiseTouches))));
-
+    // -------- Impact (0..50)
+    const impactRaw = Math.max(0, computeImpactRaw(t));
     const impactRatio = impactRaw / maxImpactRaw;
-    const scoreImpact = Math.round(impactRatio * 50);
+    let scoreImpact = Math.round(clamp(impactRatio, 0, 1) * 50);
 
-    // Clean: tỷ lệ không-noise trên tổng
-    const cleanRatio = nonNoiseTouches / (t.totalTouches + 1);
-    const scoreClean = Math.round(cleanRatio * 20);
+    // Không đụng core thì không được xem là impact kỹ thuật cao.
+    // Vẫn cho một ít điểm nếu có test/doc/other, nhưng không thể max.
+    if (t.coreTouches === 0) {
+      scoreImpact = Math.min(scoreImpact, 10);
+    }
+
+    // Nếu không có cả core lẫn test, tức chủ yếu là doc/other,
+    // ép thấp hơn nữa để tránh "đẹp giả".
+    if (t.coreTouches === 0 && t.testTouches === 0) {
+      scoreImpact = Math.min(scoreImpact, 6);
+    }
+
+    // -------- Clean / Focus (0..20)
+    const total = t.totalTouches || 0;
+    const coreRatio = total > 0 ? t.coreTouches / total : 0;
+
+    let scoreClean = Math.round(clamp(coreRatio, 0, 1) * 20);
+
+    if (t.noiseTouches >= 1) scoreClean -= 2;
+    if (t.noiseTouches >= 5) scoreClean -= 3;
+    if (t.noiseTouches >= 20) scoreClean -= 5;
+    scoreClean = clamp(scoreClean, 0, 20);
 
     const scoreTotal = scoreConsistency + scoreImpact + scoreClean;
 
@@ -112,13 +187,21 @@ export async function scoreFromCommitsWithFiles(repoDir: string, commits: Commit
       authorEmail: t.email,
       authorName: t.name,
       commitCount: t.commitCount,
+
       coreTouches: t.coreTouches,
+      testTouches: t.testTouches,
+      docTouches: t.docTouches,
+      otherTouches: t.otherTouches,
       noiseTouches: t.noiseTouches,
+      totalTouches: t.totalTouches,
+
       scoreConsistency,
       scoreImpact,
       scoreClean,
       scoreTotal,
-      totalTouches: t.totalTouches,
+
+      evidenceCommits: t.evidenceCommits,
+      topFiles: t.topFiles,
     };
   });
 

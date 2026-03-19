@@ -28,7 +28,7 @@ const RunSchema = new mongoose.Schema(
   { timestamps: true, collection: "runs" }
 );
 
-const Run = mongoose.model("Run", RunSchema);
+const Run = mongoose.models.Run || mongoose.model("Run", RunSchema);
 
 const ResultSchema = new mongoose.Schema(
   {
@@ -45,11 +45,34 @@ const ResultSchema = new mongoose.Schema(
 
     coreTouches: Number,
     noiseTouches: Number,
+    evidenceCommits: [
+      {
+        hash: String,
+        coreFiles: Number,
+        noiseFiles: Number,
+        totalFiles: Number,
+      },
+    ],
+    topFiles: [
+      {
+        path: String,
+        touches: Number,
+        tag: String,
+      },
+    ],
   },
-  { timestamps: true, collection: "results" }
+  { timestamps: true, collection: "results", strict: false }
 );
 
-const Result = mongoose.model("Result", ResultSchema);
+const ProjectSchema = new mongoose.Schema(
+  { name: String, repoUrl: String },
+  { timestamps: true, collection: "projects" }
+);
+
+// dùng mongoose.models để tránh overwrite khi hot-reload
+const Project = mongoose.models.Project || mongoose.model("Project", ProjectSchema);
+
+const Result = mongoose.models.Result || mongoose.model("Result", ResultSchema);
 
 async function start() {
   await mongoose.connect(MONGO_URI);
@@ -65,13 +88,6 @@ async function start() {
 
       // mark running
       await Run.findByIdAndUpdate(runObjectId, { status: "running", startedAt: new Date(), error: null });
-
-      // lấy repoUrl từ Project
-      const ProjectSchema = new mongoose.Schema(
-        { name: String, repoUrl: String },
-        { timestamps: true, collection: "projects" }
-      );
-      const Project = mongoose.model("Project", ProjectSchema);
 
       const project = await Project.findById(projectObjectId).lean();
       if (!project?.repoUrl) throw new Error("Project repoUrl not found");
@@ -90,6 +106,8 @@ async function start() {
 
       // lưu kết quả mới
       if (rows.length > 0) {
+        console.log("DEBUG first row keys:", Object.keys(rows[0] || {}));
+console.log("DEBUG first row totalTouches:", rows[0]?.totalTouches);
         await Result.insertMany(
           rows.map((r) => ({
             runId: runObjectId,
@@ -103,6 +121,12 @@ async function start() {
             scoreTotal: r.scoreTotal,
             coreTouches: r.coreTouches,
             noiseTouches: r.noiseTouches,
+            evidenceCommits: r.evidenceCommits,
+            topFiles: r.topFiles,
+            totalTouches: r.totalTouches,
+            testTouches: r.testTouches,
+            docTouches: r.docTouches,
+            otherTouches: r.otherTouches,
           }))
         );
       }
@@ -129,3 +153,4 @@ start().catch((err) => {
   console.error("❌ Analyzer failed to start:", err);
   process.exit(1);
 });
+
