@@ -5,12 +5,15 @@ export type EvidenceCommit = {
   coreFiles: number;
   noiseFiles: number;
   totalFiles: number;
+  changedLines?: number;
+  subject?: string;
 };
 
 export type TopFile = {
   path: string;
   touches: number;
   tag: string; // "core" | "noise" | "test" | "doc" | "other"
+  changedLines?: number;
 };
 
 export type ResultDoc = {
@@ -25,6 +28,12 @@ export type ResultDoc = {
   scoreConsistency: number;
   scoreImpact: number;
   scoreClean: number;
+  scoreConfidence: number;
+  spamPenalty: number;
+  activeDays: number;
+  activeWeeks: number;
+  tinyCommitCount: number;
+  impactRaw: number;
 
   coreTouches: number;
   testTouches: number;
@@ -52,6 +61,12 @@ const ResultSchema = new Schema<ResultDoc>(
     scoreConsistency: { type: Number, required: true, min: 0, default: 0 },
     scoreImpact: { type: Number, required: true, min: 0, default: 0 },
     scoreClean: { type: Number, required: true, min: 0, default: 0 },
+    scoreConfidence: { type: Number, required: true, min: 0, max: 100, default: 0 },
+    spamPenalty: { type: Number, required: true, min: 0, default: 0 },
+    activeDays: { type: Number, required: true, min: 0, default: 0 },
+    activeWeeks: { type: Number, required: true, min: 0, default: 0 },
+    tinyCommitCount: { type: Number, required: true, min: 0, default: 0 },
+    impactRaw: { type: Number, required: true, min: 0, default: 0 },
     coreTouches: { type: Number, required: true, min: 0, default: 0 },
     testTouches: { type: Number, required: true, min: 0, default: 0 },
     docTouches: { type: Number, required: true, min: 0, default: 0 },
@@ -65,6 +80,8 @@ const ResultSchema = new Schema<ResultDoc>(
         coreFiles: { type: Number, required: true, min: 0 },
         noiseFiles: { type: Number, required: true, min: 0 },
         totalFiles: { type: Number, required: true, min: 0 },
+        changedLines: { type: Number, required: false, min: 0 },
+        subject: { type: String, required: false },
       },
     ],
 
@@ -73,6 +90,7 @@ const ResultSchema = new Schema<ResultDoc>(
         path: { type: String, required: true },
         touches: { type: Number, required: true, min: 0 },
         tag: { type: String, required: true },
+        changedLines: { type: Number, required: false, min: 0 },
       },
     ],
   },
@@ -81,5 +99,7 @@ const ResultSchema = new Schema<ResultDoc>(
 );
 
 ResultSchema.index({ runId: 1, authorEmail: 1 }, { unique: true });
+ResultSchema.index({ runId: 1, scoreTotal: -1 });
+ResultSchema.index({ runId: 1, scoreImpact: -1 });
 
 export const Result = model<ResultDoc>("Result", ResultSchema);

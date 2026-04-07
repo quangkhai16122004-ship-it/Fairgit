@@ -2,8 +2,21 @@ import { CommitItem } from "./commitExtract";
 import { getTouchedFiles } from "./fileTouch";
 import { tagFile } from "./fileRules";
 
-export type EvidenceCommit = { hash: string; coreFiles: number; noiseFiles: number; totalFiles: number };
-export type TopFile = { path: string; touches: number; tag: string };
+export type EvidenceCommit = {
+  hash: string;
+  coreFiles: number;
+  noiseFiles: number;
+  totalFiles: number;
+  changedLines?: number;
+  subject?: string;
+};
+
+export type TopFile = {
+  path: string;
+  touches: number;
+  tag: string;
+  changedLines?: number;
+};
 
 function tagPriority(tag: string) {
   if (tag === "core") return 5;

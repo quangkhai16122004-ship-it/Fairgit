@@ -8,6 +8,9 @@ export type RunDoc = {
   startedAt?: Date;
   finishedAt?: Date;
   error?: string;
+  progress: number;
+  totalCommits?: number;
+  totalContributors?: number;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -19,8 +22,14 @@ const RunSchema = new Schema<RunDoc>(
     startedAt: { type: Date },
     finishedAt: { type: Date },
     error: { type: String },
+    progress: { type: Number, required: true, min: 0, max: 100, default: 0 },
+    totalCommits: { type: Number, min: 0 },
+    totalContributors: { type: Number, min: 0 },
   },
   { timestamps: true }
 );
+
+RunSchema.index({ projectId: 1, createdAt: -1 });
+RunSchema.index({ status: 1, createdAt: -1 });
 
 export const Run = model<RunDoc>("Run", RunSchema);

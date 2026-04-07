@@ -1,6 +1,5 @@
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
 import mongoose from "mongoose";
 import cookieParser from "cookie-parser";
 import authRoutes from "./routes/auth.routes";
@@ -9,24 +8,34 @@ import { projectRouter } from "./routes/project.routes";
 import { runRouter } from "./routes/run.routes";
 import { resultRouter } from "./routes/result.routes";
 import { dashboardRouter } from "./routes/dashboard.routes";
-
-dotenv.config();
+import { env } from "./configs/env";
+import { requestLog } from "./middlewares/requestLog";
+import { createRateLimiter } from "./middlewares/rateLimit";
 
 const app = express();
 
 app.use(
-    cors({
-      origin: "http://localhost:5173",
-      credentials: true,
-    })
-  );
+  cors({
+    origin: env.CORS_ORIGIN,
+    credentials: true,
+  })
+);
 
+app.disable("x-powered-by");
+app.use((_, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("X-Frame-Options", "DENY");
+  next();
+});
+app.use(requestLog);
+app.use(createRateLimiter(env.API_RATE_LIMIT_WINDOW_MS, env.API_RATE_LIMIT_MAX));
 app.use(cookieParser());
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 
 app.use("/projects", projectRouter);
 app.use("/runs", runRouter);
-app.use("/", resultRouter);
+app.use("/runs", resultRouter);
 app.use("/auth", authRoutes);
 app.use(dashboardRouter);
 
@@ -34,15 +43,14 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "api" });
 });
 
-const PORT = process.env.PORT || 4000;
-const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/fairgit";
+const MONGO_URI = env.MONGO_URI;
 
 async function start() {
   await mongoose.connect(MONGO_URI);
   console.log("✅ Connected to MongoDB:", MONGO_URI);
 
-  app.listen(PORT, () => {
-    console.log(`✅ API listening on http://localhost:${PORT}`);
+  app.listen(env.PORT, () => {
+    console.log(`✅ API listening on http://localhost:${env.PORT}`);
   });
 }
 

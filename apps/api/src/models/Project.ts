@@ -15,4 +15,6 @@ const ProjectSchema = new Schema<ProjectDoc>(
   { timestamps: true }
 );
 
+ProjectSchema.index({ repoUrl: 1 });
+
 export const Project = model<ProjectDoc>("Project", ProjectSchema);

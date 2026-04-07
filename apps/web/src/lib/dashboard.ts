@@ -15,6 +15,15 @@ export type DashboardSummary = {
     status: "pending" | "running" | "done" | "failed";
     createdAt: string;
     updatedAt: string;
+    progress?: number;
+    error?: string | null;
+  };
+  latestDoneRun?: null | {
+    _id: string;
+    projectId: string;
+    status: "pending" | "running" | "done" | "failed";
+    createdAt: string;
+    updatedAt: string;
     error?: string | null;
   };
   topContributors: Array<{
@@ -28,6 +37,7 @@ export type DashboardSummary = {
     scoreConsistency: number;
     scoreImpact: number;
     scoreClean: number;
+    scoreConfidence?: number;
     coreTouches: number;
     noiseTouches: number;
     totalTouches?: number;

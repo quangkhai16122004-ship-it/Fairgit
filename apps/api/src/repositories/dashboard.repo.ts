@@ -24,11 +24,12 @@ export async function getDashboardSummary() {
   }
 
   const latestRun = await Run.findOne().sort({ createdAt: -1 }).lean();
+  const latestDoneRun = await Run.findOne({ status: "done" }).sort({ createdAt: -1 }).lean();
 
-  // Top contributors chỉ lấy khi latestRun là done
+  // Top contributors lấy theo run done gần nhất để dashboard luôn có dữ liệu tham chiếu.
   let topContributors: any[] = [];
-  if (latestRun && latestRun.status === "done") {
-    topContributors = await Result.find({ runId: latestRun._id })
+  if (latestDoneRun) {
+    topContributors = await Result.find({ runId: latestDoneRun._id })
       .sort({ scoreTotal: -1 })
       .limit(5)
       .lean();
@@ -39,6 +40,7 @@ export async function getDashboardSummary() {
     runsCount,
     statusCounts: byStatus,
     latestRun,
+    latestDoneRun,
     topContributors,
   };
 }

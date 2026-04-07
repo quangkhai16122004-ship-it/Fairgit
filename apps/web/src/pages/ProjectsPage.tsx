@@ -1,6 +1,7 @@
 import React from "react";
 import { createProject, listProjects } from "../lib/projects";
 import type { Project } from "../lib/projects";
+import { toErrorMessage } from "../lib/errorMessage";
 
 export function ProjectsPage() {
   const [items, setItems] = React.useState<Project[]>([]);
@@ -38,8 +39,8 @@ export function ProjectsPage() {
       setName("");
       setRepoUrl("");
       await refresh();
-    } catch (err: any) {
-      setError(err?.response?.data?.error ?? err?.message ?? "Create failed");
+    } catch (err: unknown) {
+      setError(toErrorMessage(err, "Create failed"));
     } finally {
       setSaving(false);
     }

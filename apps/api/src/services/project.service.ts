@@ -6,9 +6,25 @@ const CreateProjectSchema = z.object({
   repoUrl: z.string().url("repoUrl must be a valid URL"),
 });
 
+function normalizeRepoUrl(raw: string) {
+  const trimmed = raw.trim();
+  const noSlash = trimmed.replace(/\/+$/, "");
+  return noSlash.replace(/\.git$/i, "");
+}
+
 export async function createProject(body: unknown) {
   const data = CreateProjectSchema.parse(body);
-  return repo.createProject(data);
+
+  const normalizedRepoUrl = normalizeRepoUrl(data.repoUrl);
+  const existing = await repo.findByRepoUrl(normalizedRepoUrl);
+  if (existing) {
+    throw new Error("Project repoUrl already exists");
+  }
+
+  return repo.createProject({
+    name: data.name.trim(),
+    repoUrl: normalizedRepoUrl,
+  });
 }
 
 export async function listProjects() {

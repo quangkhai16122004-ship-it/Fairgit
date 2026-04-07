@@ -1,22 +1,17 @@
-import dotenv from "dotenv";
 import mongoose from "mongoose";
 import { Worker } from "bullmq";
 import IORedis from "ioredis";
 import { ensureRepo, getRecentCommits } from "./commitExtract";
-import { scoreFromCommits } from "./scoring";
 import { scoreFromCommitsWithFiles } from "./scoreByFiles";
-
-dotenv.config();
-
-const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/fairgit";
+import { env } from "./env";
 
 const connection = new IORedis({
-  host: process.env.REDIS_HOST || "127.0.0.1",
-  port: Number(process.env.REDIS_PORT || 6379),
+  host: env.REDIS_HOST,
+  port: env.REDIS_PORT,
   maxRetriesPerRequest: null,
 });
 
-// Mongoose schema tối thiểu cho Run để update status
+// Schema tối thiểu để analyzer cập nhật tiến độ mà không phụ thuộc chặt vào API package.
 const RunSchema = new mongoose.Schema(
   {
     projectId: mongoose.Schema.Types.ObjectId,
@@ -24,90 +19,67 @@ const RunSchema = new mongoose.Schema(
     startedAt: Date,
     finishedAt: Date,
     error: String,
+    progress: Number,
+    totalCommits: Number,
+    totalContributors: Number,
   },
-  { timestamps: true, collection: "runs" }
+  { timestamps: true, collection: "runs", strict: false }
 );
 
-const Run = mongoose.models.Run || mongoose.model("Run", RunSchema);
-
 const ResultSchema = new mongoose.Schema(
-  {
-    runId: mongoose.Schema.Types.ObjectId,
-    projectId: mongoose.Schema.Types.ObjectId,
-    authorEmail: String,
-    authorName: String,
-    commitCount: Number,
-
-    scoreConsistency: Number,
-    scoreImpact: Number,
-    scoreClean: Number,
-    scoreTotal: Number,
-
-    coreTouches: Number,
-    noiseTouches: Number,
-    evidenceCommits: [
-      {
-        hash: String,
-        coreFiles: Number,
-        noiseFiles: Number,
-        totalFiles: Number,
-      },
-    ],
-    topFiles: [
-      {
-        path: String,
-        touches: Number,
-        tag: String,
-      },
-    ],
-  },
+  {},
   { timestamps: true, collection: "results", strict: false }
 );
 
 const ProjectSchema = new mongoose.Schema(
   { name: String, repoUrl: String },
-  { timestamps: true, collection: "projects" }
+  { timestamps: true, collection: "projects", strict: false }
 );
 
-// dùng mongoose.models để tránh overwrite khi hot-reload
+const Run = mongoose.models.Run || mongoose.model("Run", RunSchema);
+const Result = mongoose.models.Result || mongoose.model("Result", ResultSchema);
 const Project = mongoose.models.Project || mongoose.model("Project", ProjectSchema);
 
-const Result = mongoose.models.Result || mongoose.model("Result", ResultSchema);
+async function setRunProgress(runObjectId: mongoose.Types.ObjectId, patch: Record<string, unknown>) {
+  await Run.findByIdAndUpdate(runObjectId, patch);
+}
 
 async function start() {
-  await mongoose.connect(MONGO_URI);
+  await mongoose.connect(env.MONGO_URI);
   console.log("✅ Analyzer connected to MongoDB");
 
   const worker = new Worker(
     "analysis",
     async (job) => {
       const { runId, projectId } = job.data as { runId: string; projectId: string };
-
       const runObjectId = new mongoose.Types.ObjectId(runId);
       const projectObjectId = new mongoose.Types.ObjectId(projectId);
 
-      // mark running
-      await Run.findByIdAndUpdate(runObjectId, { status: "running", startedAt: new Date(), error: null });
+      await setRunProgress(runObjectId, {
+        status: "running",
+        startedAt: new Date(),
+        finishedAt: null,
+        error: null,
+        progress: 5,
+      });
 
       const project = await Project.findById(projectObjectId).lean();
-      if (!project?.repoUrl) throw new Error("Project repoUrl not found");
+      if (!project?.repoUrl) {
+        throw new Error("Project repoUrl not found");
+      }
 
-      // 1) đảm bảo repo đã có (clone/fetch)
       const repoDir = await ensureRepo(project.repoUrl);
+      await setRunProgress(runObjectId, { progress: 20 });
 
-      // 2) lấy commit 90 ngày gần nhất
-      const commits = await getRecentCommits(repoDir, 90);
+      const commits = await getRecentCommits(repoDir, env.ANALYSIS_LOOKBACK_DAYS, env.ANALYSIS_MAX_COMMITS);
+      await setRunProgress(runObjectId, { progress: 40, totalCommits: commits.length });
 
-      // 3) chấm điểm từ danh sách commit
       const rows = await scoreFromCommitsWithFiles(repoDir, commits);
+      await setRunProgress(runObjectId, { progress: 75, totalContributors: rows.length });
 
-      // xóa kết quả cũ của run này (nếu chạy lại)
       await Result.deleteMany({ runId: runObjectId });
 
-      // lưu kết quả mới
       if (rows.length > 0) {
-        console.log("DEBUG first row keys:", Object.keys(rows[0] || {}));
-console.log("DEBUG first row totalTouches:", rows[0]?.totalTouches);
         await Result.insertMany(
           rows.map((r) => ({
             runId: runObjectId,
@@ -115,34 +87,55 @@ console.log("DEBUG first row totalTouches:", rows[0]?.totalTouches);
             authorEmail: r.authorEmail,
             authorName: r.authorName,
             commitCount: r.commitCount,
+
             scoreConsistency: r.scoreConsistency,
             scoreImpact: r.scoreImpact,
             scoreClean: r.scoreClean,
             scoreTotal: r.scoreTotal,
+            scoreConfidence: r.scoreConfidence,
+            spamPenalty: r.spamPenalty,
+            activeDays: r.activeDays,
+            activeWeeks: r.activeWeeks,
+            tinyCommitCount: r.tinyCommitCount,
+            impactRaw: r.impactRaw,
+
             coreTouches: r.coreTouches,
-            noiseTouches: r.noiseTouches,
-            evidenceCommits: r.evidenceCommits,
-            topFiles: r.topFiles,
-            totalTouches: r.totalTouches,
             testTouches: r.testTouches,
             docTouches: r.docTouches,
             otherTouches: r.otherTouches,
+            noiseTouches: r.noiseTouches,
+            totalTouches: r.totalTouches,
+
+            evidenceCommits: r.evidenceCommits,
+            topFiles: r.topFiles,
           }))
         );
       }
 
-      // mark done
-      await Run.findByIdAndUpdate(runObjectId, { status: "done", finishedAt: new Date() });
+      await setRunProgress(runObjectId, {
+        status: "done",
+        finishedAt: new Date(),
+        error: null,
+        progress: 100,
+      });
 
-      console.log("✅ Done run:", runId);
+      console.log(`✅ Done run: ${runId} (${rows.length} contributors, ${commits.length} commits)`);
     },
-    { connection }
+    {
+      connection,
+      concurrency: env.ANALYZER_CONCURRENCY,
+    }
   );
 
   worker.on("failed", async (job, err) => {
     console.error("❌ Job failed:", job?.id, err);
     if (job?.data?.runId) {
-      await Run.findByIdAndUpdate(job.data.runId, { status: "failed", error: err.message, finishedAt: new Date() });
+      await Run.findByIdAndUpdate(job.data.runId, {
+        status: "failed",
+        error: err.message,
+        finishedAt: new Date(),
+        progress: 100,
+      });
     }
   });
 
@@ -153,4 +146,3 @@ start().catch((err) => {
   console.error("❌ Analyzer failed to start:", err);
   process.exit(1);
 });
-

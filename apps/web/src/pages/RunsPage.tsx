@@ -1,100 +1,129 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { listProjects, type Project } from "../lib/projects";
-import { createRun, getRun, type Run } from "../lib/runs";
+import { createRun, getRun, listRuns, type Run, type RunStatus } from "../lib/runs";
+import { toErrorMessage } from "../lib/errorMessage";
 
 const LAST_RUN_KEY = "fairgit:lastRunId";
 
 export function RunsPage() {
-  const [projects, setProjects] = React.useState<Project[]>([]);
-  const [loadingProjects, setLoadingProjects] = React.useState(true);
-
-  const [projectId, setProjectId] = React.useState<string>("");
-  const [creating, setCreating] = React.useState(false);
-
-  const [run, setRun] = React.useState<Run | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
-
   const nav = useNavigate();
 
-  async function loadProjects() {
+  const [projects, setProjects] = React.useState<Project[]>([]);
+  const [loadingProjects, setLoadingProjects] = React.useState(true);
+  const [loadingRuns, setLoadingRuns] = React.useState(true);
+
+  const [projectId, setProjectId] = React.useState<string>("");
+  const [statusFilter, setStatusFilter] = React.useState<RunStatus | "all">("all");
+  const [creating, setCreating] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const [activeRun, setActiveRun] = React.useState<Run | null>(null);
+  const [runs, setRuns] = React.useState<Run[]>([]);
+
+  const selectedProject = projects.find((p) => p._id === projectId);
+
+  const loadProjects = React.useCallback(async () => {
     setLoadingProjects(true);
     try {
-      const ps = await listProjects();
-      setProjects(ps);
-      if (!projectId && ps.length > 0) setProjectId(ps[0]._id);
+      const data = await listProjects();
+      setProjects(data);
+      if (!projectId && data.length > 0) {
+        setProjectId(data[0]._id);
+      }
     } finally {
       setLoadingProjects(false);
     }
-  }
+  }, [projectId]);
 
-  // load projects + restore last run
+  const loadRuns = React.useCallback(
+    async (opts?: { keepActiveRun?: boolean }) => {
+      setLoadingRuns(true);
+      try {
+        const res = await listRuns({
+          projectId: projectId || undefined,
+          status: statusFilter === "all" ? undefined : statusFilter,
+          limit: 30,
+          offset: 0,
+        });
+        setRuns(res.items);
+
+        if (opts?.keepActiveRun) return;
+
+        const lastRunId = localStorage.getItem(LAST_RUN_KEY);
+        const preferred = res.items.find((r) => r._id === lastRunId);
+        const fallback = res.items.find((r) => r.status === "running" || r.status === "pending") ?? res.items[0] ?? null;
+        setActiveRun(preferred ?? fallback ?? null);
+      } finally {
+        setLoadingRuns(false);
+      }
+    },
+    [projectId, statusFilter]
+  );
+
   React.useEffect(() => {
     loadProjects();
+  }, [loadProjects]);
 
-    const lastRunId = localStorage.getItem(LAST_RUN_KEY);
-    if (lastRunId) {
-      getRun(lastRunId)
-        .then((r) => setRun(r))
-        .catch(() => {
-          // nếu runId cũ không còn hợp lệ thì xóa cho sạch
-          localStorage.removeItem(LAST_RUN_KEY);
-        });
-    }
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // poll run status nếu đang running/pending
   React.useEffect(() => {
-    if (!run) return;
-    if (run.status !== "pending" && run.status !== "running") return;
+    loadRuns();
+  }, [loadRuns]);
 
-    const t = setInterval(async () => {
+  // Poll active run để cập nhật tiến độ realtime.
+  React.useEffect(() => {
+    if (!activeRun) return;
+    if (activeRun.status !== "pending" && activeRun.status !== "running") return;
+
+    const timer = setInterval(async () => {
       try {
-        const fresh = await getRun(run._id);
-        setRun(fresh);
-      } catch {}
+        const fresh = await getRun(activeRun._id);
+        setActiveRun(fresh);
+        setRuns((prev) => prev.map((r) => (r._id === fresh._id ? fresh : r)));
+      } catch {
+        // ignore poll noise
+      }
     }, 2000);
 
-    return () => clearInterval(t);
-  }, [run]);
+    return () => clearInterval(timer);
+  }, [activeRun]);
 
   async function onRun() {
     setError(null);
     setCreating(true);
     try {
       if (!projectId) throw new Error("Chọn project trước");
-      const r = await createRun(projectId);
-      setRun(r);
-
-      // ✅ nhớ run gần nhất để quay lại tab vẫn còn
-      localStorage.setItem(LAST_RUN_KEY, r._id);
-    } catch (e: any) {
-      setError(e?.response?.data?.error ?? e?.message ?? "Create run failed");
+      const run = await createRun(projectId);
+      setActiveRun(run);
+      localStorage.setItem(LAST_RUN_KEY, run._id);
+      await loadRuns({ keepActiveRun: true });
+      setRuns((prev) => {
+        const exists = prev.some((x) => x._id === run._id);
+        if (exists) return prev.map((x) => (x._id === run._id ? run : x));
+        return [run, ...prev].slice(0, 30);
+      });
+    } catch (e: unknown) {
+      setError(toErrorMessage(e, "Create run failed"));
     } finally {
       setCreating(false);
     }
   }
 
-  function clearLastRun() {
-    localStorage.removeItem(LAST_RUN_KEY);
-    setRun(null);
+  function pickRun(run: Run) {
+    setActiveRun(run);
+    localStorage.setItem(LAST_RUN_KEY, run._id);
   }
-
-  const selectedProject = projects.find((p) => p._id === projectId);
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold">Runs</h1>
-        <p className="text-sm text-gray-600 mt-1">Chạy phân tích (analysis) cho 1 project.</p>
+        <p className="text-sm text-gray-600 mt-1">Tạo run phân tích, theo dõi tiến độ, và mở kết quả ngay khi hoàn tất.</p>
       </div>
 
       <div className="bg-white border rounded-2xl p-4 space-y-4">
-        <div className="grid gap-3 md:grid-cols-3">
-          <div className="md:col-span-2">
-            <div className="text-xs text-gray-600 mb-1">Chọn project</div>
+        <div className="grid gap-3 lg:grid-cols-6">
+          <div className="lg:col-span-3">
+            <div className="text-xs text-gray-600 mb-1">Project</div>
             {loadingProjects ? (
               <div className="text-sm text-gray-600">Loading projects...</div>
             ) : (
@@ -112,12 +141,34 @@ export function RunsPage() {
             )}
           </div>
 
-          <div>
-            <div className="text-xs text-gray-600 mb-1">Repo</div>
-            <div className="text-sm text-gray-800 break-all border rounded-lg px-3 py-2 bg-gray-50">
-              {selectedProject?.repoUrl ?? "-"}
-            </div>
+          <div className="lg:col-span-2">
+            <div className="text-xs text-gray-600 mb-1">Status filter</div>
+            <select
+              className="w-full border rounded-lg px-3 py-2"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as RunStatus | "all")}
+            >
+              <option value="all">All</option>
+              <option value="pending">Pending</option>
+              <option value="running">Running</option>
+              <option value="done">Done</option>
+              <option value="failed">Failed</option>
+            </select>
           </div>
+
+          <div className="flex items-end">
+            <button
+              type="button"
+              onClick={() => void loadRuns()}
+              className="w-full rounded-lg border px-4 py-2 text-sm hover:bg-gray-50"
+            >
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        <div className="text-xs text-gray-600 break-all">
+          repo: <span className="font-mono">{selectedProject?.repoUrl ?? "-"}</span>
         </div>
 
         {error && <div className="text-sm text-red-600">{error}</div>}
@@ -130,73 +181,96 @@ export function RunsPage() {
           >
             {creating ? "Starting..." : "Run analysis"}
           </button>
-
-          <button
-            type="button"
-            onClick={loadProjects}
-            className="rounded-lg border px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            Refresh projects
-          </button>
         </div>
       </div>
 
-      {/* Run status card */}
-      <div className="bg-white border rounded-2xl p-4">
-        <div className="flex items-center justify-between">
-          <div className="font-medium">Run status</div>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-1 bg-white border rounded-2xl p-4">
+          <div className="font-medium">Run detail</div>
+          {!activeRun ? (
+            <div className="mt-2 text-sm text-gray-600">Chọn run bên phải để xem chi tiết.</div>
+          ) : (
+            <div className="mt-3 space-y-3 text-sm">
+              <div>
+                <span className="text-gray-600">runId:</span>{" "}
+                <span className="font-mono break-all">{activeRun._id}</span>
+              </div>
+              <div>
+                <span className="text-gray-600">status:</span> <StatusBadge status={activeRun.status} />
+              </div>
+              <div className="text-gray-600">
+                progress: {activeRun.progress ?? (activeRun.status === "done" ? 100 : 0)}%
+              </div>
+              <ProgressBar value={activeRun.progress ?? (activeRun.status === "done" ? 100 : 0)} />
 
-          {run && (
-            <button
-              className="text-sm underline text-gray-600"
-              onClick={clearLastRun}
-              title="Xóa run đang hiển thị"
-            >
-              Clear
-            </button>
+              <div className="text-gray-600">
+                commits: {activeRun.totalCommits ?? "-"} • contributors: {activeRun.totalContributors ?? "-"}
+              </div>
+
+              <div className="text-gray-600">
+                updatedAt: {new Date(activeRun.updatedAt).toLocaleString()}
+              </div>
+
+              {activeRun.error && (
+                <div className="text-red-600 whitespace-pre-wrap">
+                  <span className="text-gray-600">error:</span> {activeRun.error}
+                </div>
+              )}
+
+              {activeRun.status === "done" && (
+                <button
+                  className="mt-2 rounded-lg border px-4 py-2 text-sm hover:bg-gray-50"
+                  onClick={() => nav(`/results?runId=${activeRun._id}`)}
+                >
+                  View results
+                </button>
+              )}
+            </div>
           )}
         </div>
 
-        {!run ? (
-          <div className="text-sm text-gray-600 mt-2">
-            Chưa có run nào. Bấm “Run analysis”.
+        <div className="lg:col-span-2 bg-white border rounded-2xl overflow-hidden">
+          <div className="px-4 py-3 border-b flex items-center justify-between">
+            <div className="font-medium">Recent runs</div>
+            <div className="text-xs text-gray-500">{runs.length} items</div>
           </div>
-        ) : (
-          <div className="mt-3 space-y-2 text-sm">
-            <div>
-              <span className="text-gray-600">runId:</span>{" "}
-              <span className="font-mono">{run._id}</span>
+
+          {loadingRuns ? (
+            <div className="p-4 text-sm text-gray-600">Loading runs...</div>
+          ) : runs.length === 0 ? (
+            <div className="p-4 text-sm text-gray-600">Chưa có run nào cho bộ lọc hiện tại.</div>
+          ) : (
+            <div className="divide-y">
+              {runs.map((r) => (
+                <button
+                  key={r._id}
+                  type="button"
+                  onClick={() => pickRun(r)}
+                  className={`w-full text-left p-4 hover:bg-gray-50 ${
+                    activeRun?._id === r._id ? "bg-gray-50" : ""
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-mono text-xs break-all">{r._id}</div>
+                      <div className="text-xs text-gray-600 mt-1">
+                        {new Date(r.createdAt).toLocaleString()}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        progress: {r.progress ?? (r.status === "done" ? 100 : 0)}% • commits: {r.totalCommits ?? "-"} • contributors:{" "}
+                        {r.totalContributors ?? "-"}
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <StatusBadge status={r.status} />
+                    </div>
+                  </div>
+                </button>
+              ))}
             </div>
-
-            <div>
-              <span className="text-gray-600">status:</span>{" "}
-              <StatusBadge status={run.status} />
-            </div>
-
-            {run.error && (
-              <div className="text-red-600 whitespace-pre-wrap">
-                <span className="text-gray-600">error:</span> {run.error}
-              </div>
-            )}
-
-            <div className="text-gray-600">
-              updatedAt: {new Date(run.updatedAt).toLocaleString()}
-            </div>
-
-            {run.status === "done" && (
-              <button
-                className="mt-3 rounded-lg border px-4 py-2 text-sm hover:bg-gray-50"
-                onClick={() => nav(`/results?runId=${run._id}`)}
-              >
-                View results
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div className="text-xs text-gray-500">
-        Tip: Khi status = <b>done</b>, sang tab <b>Results</b> để xem leaderboard.
+          )}
+        </div>
       </div>
     </div>
   );
@@ -208,4 +282,13 @@ function StatusBadge({ status }: { status: Run["status"] }) {
   if (status === "failed") return <span className={`${base} bg-red-50 border-red-200`}>failed</span>;
   if (status === "running") return <span className={`${base} bg-blue-50 border-blue-200`}>running</span>;
   return <span className={`${base} bg-gray-50 border-gray-200`}>pending</span>;
+}
+
+function ProgressBar({ value }: { value: number }) {
+  const safe = Math.max(0, Math.min(100, value));
+  return (
+    <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+      <div className="h-2 bg-black transition-all duration-300" style={{ width: `${safe}%` }} />
+    </div>
+  );
 }

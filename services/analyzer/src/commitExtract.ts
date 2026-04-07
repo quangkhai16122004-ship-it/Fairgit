@@ -9,6 +9,7 @@ export type CommitItem = {
   authorName: string;
   authorEmail: string;
   date: string; // ISO string
+  subject?: string;
 };
 
 function safeFolderName(repoUrl: string) {
@@ -76,13 +77,14 @@ export async function ensureRepo(repoUrl: string) {
   return repoDir;
 }
 
-export async function getRecentCommits(repoDir: string, days = 90): Promise<CommitItem[]> {
+export async function getRecentCommits(repoDir: string, days = 90, maxCount = 5000): Promise<CommitItem[]> {
   const repoGit = simpleGit(repoDir);
   const targetRef = await resolveRemoteDefaultBranch(repoDir);
 
   const log = await repoGit.log([
     targetRef,
     `--since=${days}.days.ago`,
+    `--max-count=${maxCount}`,
   ]);
 
   return log.all.map((c) => ({
@@ -90,6 +92,7 @@ export async function getRecentCommits(repoDir: string, days = 90): Promise<Comm
     authorName: c.author_name || "unknown",
     authorEmail: (c.author_email || "unknown").toLowerCase(),
     date: c.date,
+    subject: (c.message || "").trim(),
   }));
 }
 

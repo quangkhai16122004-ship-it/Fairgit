@@ -18,6 +18,7 @@ const AuthCtx = React.createContext<{
   setGuest: () => {},
 });
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   return React.useContext(AuthCtx);
 }

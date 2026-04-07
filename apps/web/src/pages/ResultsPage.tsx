@@ -1,70 +1,133 @@
 import React from "react";
-import { getResults, type ResultRow } from "../lib/results";
-import { copyText } from "../lib/clipboard";
 import { useSearchParams } from "react-router-dom";
+import { copyText } from "../lib/clipboard";
+import { getResults, type ResultRow } from "../lib/results";
+import { toErrorMessage } from "../lib/errorMessage";
+
+const PAGE_SIZE = 50;
 
 export function ResultsPage() {
   const [runId, setRunId] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [items, setItems] = React.useState<ResultRow[]>([]);
+  const [total, setTotal] = React.useState(0);
+  const [offset, setOffset] = React.useState(0);
   const [error, setError] = React.useState<string | null>(null);
   const [selected, setSelected] = React.useState<ResultRow | null>(null);
+
   const [q, setQ] = React.useState("");
+  const [sortBy, setSortBy] = React.useState<
+    "scoreTotal" | "scoreImpact" | "scoreConsistency" | "scoreClean" | "scoreConfidence" | "commitCount"
+  >("scoreTotal");
+  const [sortDir, setSortDir] = React.useState<"asc" | "desc">("desc");
 
   const [sp] = useSearchParams();
 
-  const loadResults = React.useCallback(async (rid: string) => {
-    setLoading(true);
-    setError(null);
-    setSelected(null);
+  const loadResults = React.useCallback(
+    async (input: {
+      rid: string;
+      reset: boolean;
+      nextOffset: number;
+      q: string;
+      sortBy: "scoreTotal" | "scoreImpact" | "scoreConsistency" | "scoreClean" | "scoreConfidence" | "commitCount";
+      sortDir: "asc" | "desc";
+    }) => {
+      setLoading(true);
+      setError(null);
+      try {
+        if (!input.rid.trim()) throw new Error("Nhập runId trước");
 
-    try {
-      if (!rid.trim()) throw new Error("Nhập runId trước");
-      const data = (await getResults(rid.trim())).map(normalizeResultRow);
-      setItems(data);
-      setSelected(data[0] ?? null);
-    } catch (e: any) {
-      setError(e?.response?.data?.error ?? e?.message ?? "Load failed");
-      setItems([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+        const data = await getResults(input.rid.trim(), {
+          limit: PAGE_SIZE,
+          offset: input.nextOffset,
+          q: input.q.trim() || undefined,
+          sortBy: input.sortBy,
+          sortDir: input.sortDir,
+        });
+
+        const normalized = data.items.map(normalizeResultRow);
+        setTotal(data.total);
+        setOffset(input.nextOffset + normalized.length);
+
+        if (input.reset) {
+          setItems(normalized);
+          setSelected(normalized[0] ?? null);
+        } else {
+          setItems((prev) => [...prev, ...normalized]);
+        }
+      } catch (e: unknown) {
+        setError(toErrorMessage(e, "Load failed"));
+        if (input.reset) {
+          setItems([]);
+          setTotal(0);
+          setOffset(0);
+          setSelected(null);
+        }
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
 
   React.useEffect(() => {
     const rid = sp.get("runId") ?? "";
-
     setRunId(rid);
-    setSelected(null);
     setItems([]);
+    setTotal(0);
+    setOffset(0);
+    setSelected(null);
     setError(null);
-
     if (rid.trim()) {
-      loadResults(rid);
+      loadResults({
+        rid,
+        reset: true,
+        nextOffset: 0,
+        q: "",
+        sortBy: "scoreTotal",
+        sortDir: "desc",
+      });
     }
   }, [sp, loadResults]);
 
-  const filtered = items.filter((r) => {
-    const s = (r.authorName + " " + r.authorEmail).toLowerCase();
-    return s.includes(q.trim().toLowerCase());
-  });
-
-  async function onLoad() {
-    await loadResults(runId);
+  function onLoad() {
+    void loadResults({
+      rid: runId,
+      reset: true,
+      nextOffset: 0,
+      q,
+      sortBy,
+      sortDir,
+    });
   }
+
+  function onLoadMore() {
+    if (loading) return;
+    if (items.length >= total) return;
+    void loadResults({
+      rid: runId,
+      reset: false,
+      nextOffset: offset,
+      q,
+      sortBy,
+      sortDir,
+    });
+  }
+
+  const canLoadMore = items.length < total;
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold">Results</h1>
         <p className="text-sm text-gray-600 mt-1">
-          Nhập runId để xem bảng xếp hạng + bằng chứng.
+          Leaderboard minh bạch theo run, có lọc/sắp xếp và bằng chứng cho từng contributor.
         </p>
       </div>
 
-      <div className="bg-white border rounded-2xl p-4">
-        <div className="grid gap-3 md:grid-cols-4">
-          <div className="md:col-span-3">
+      <div className="bg-white border rounded-2xl p-4 space-y-3">
+        <div className="grid gap-3 lg:grid-cols-12">
+          <div className="lg:col-span-4">
             <div className="text-xs text-gray-600 mb-1">runId</div>
             <input
               className="w-full border rounded-lg px-3 py-2 font-mono"
@@ -74,7 +137,45 @@ export function ResultsPage() {
             />
           </div>
 
-          <div className="flex items-end">
+          <div className="lg:col-span-3">
+            <div className="text-xs text-gray-600 mb-1">Search name/email</div>
+            <input
+              className="w-full border rounded-lg px-3 py-2"
+              placeholder="nguyen, @gmail..."
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+          </div>
+
+          <div className="lg:col-span-2">
+            <div className="text-xs text-gray-600 mb-1">Sort by</div>
+            <select
+              className="w-full border rounded-lg px-3 py-2"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+            >
+              <option value="scoreTotal">Total</option>
+              <option value="scoreImpact">Impact</option>
+              <option value="scoreConsistency">Consistency</option>
+              <option value="scoreClean">Focus</option>
+              <option value="scoreConfidence">Confidence</option>
+              <option value="commitCount">Commit count</option>
+            </select>
+          </div>
+
+          <div className="lg:col-span-1">
+            <div className="text-xs text-gray-600 mb-1">Dir</div>
+            <select
+              className="w-full border rounded-lg px-3 py-2"
+              value={sortDir}
+              onChange={(e) => setSortDir(e.target.value as "asc" | "desc")}
+            >
+              <option value="desc">Desc</option>
+              <option value="asc">Asc</option>
+            </select>
+          </div>
+
+          <div className="lg:col-span-2 flex items-end">
             <button
               onClick={onLoad}
               disabled={loading}
@@ -85,69 +186,73 @@ export function ResultsPage() {
           </div>
         </div>
 
-        {error && <div className="mt-3 text-sm text-red-600">{error}</div>}
+        <div className="text-xs text-gray-500">
+          Showing {items.length} / {total} contributors
+        </div>
+
+        {error && <div className="text-sm text-red-600">{error}</div>}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 bg-white border rounded-2xl overflow-hidden">
-          <div className="px-4 py-3 border-b flex items-center justify-between gap-3">
+          <div className="px-4 py-3 border-b flex items-center justify-between">
             <div className="font-medium">Leaderboard</div>
-
-            <div className="flex items-center gap-3">
-              <input
-                className="border rounded-lg px-3 py-1 text-sm"
-                placeholder="Search name/email..."
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-              />
-              <div className="text-xs text-gray-500">
-                {filtered.length} / {items.length}
-              </div>
+            <div className="text-xs text-gray-500">
+              {sortBy} ({sortDir})
             </div>
           </div>
 
           {items.length === 0 ? (
-            <div className="p-4 text-sm text-gray-600">
-              Chưa có dữ liệu. Nhập runId rồi Load.
-            </div>
+            <div className="p-4 text-sm text-gray-600">Chưa có dữ liệu. Nhập runId rồi bấm Load results.</div>
           ) : (
-            <div className="divide-y">
-              {filtered.map((r, idx) => (
-                <button
-                  key={r._id}
-                  onClick={() => setSelected(r)}
-                  className={`w-full text-left p-4 hover:bg-gray-50 ${
-                    selected?._id === r._id ? "bg-gray-50" : ""
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-500 w-6">#{idx + 1}</span>
-                        <div className="font-medium">{r.authorName}</div>
+            <>
+              <div className="divide-y">
+                {items.map((r, idx) => (
+                  <button
+                    key={r._id}
+                    onClick={() => setSelected(r)}
+                    className={`w-full text-left p-4 hover:bg-gray-50 ${
+                      selected?._id === r._id ? "bg-gray-50" : ""
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-500 w-8">#{idx + 1}</span>
+                          <div className="font-medium">{r.authorName}</div>
+                          <ConfidenceBadge value={r.scoreConfidence ?? 0} />
+                        </div>
+                        <div className="text-xs text-gray-600 break-all ml-10">{r.authorEmail}</div>
+                        <div className="text-xs text-gray-500 ml-10 mt-1">
+                          commits: {r.commitCount} • activeDays: {r.activeDays ?? 0} • spamPenalty: {r.spamPenalty ?? 0}
+                        </div>
                       </div>
 
-                      <div className="text-xs text-gray-600 break-all ml-8">
-                        {r.authorEmail}
-                      </div>
-
-                      <div className="text-xs text-gray-500 ml-8 mt-1">
-                        commits: {r.commitCount} • coreTouches: {r.coreTouches} • noise:{" "}
-                        {r.noiseTouches}
+                      <div className="text-right shrink-0">
+                        <div className="text-2xl font-semibold">{r.scoreTotal}</div>
+                        <div className="text-xs text-gray-500">/ 100</div>
+                        <div className="mt-2 text-xs text-gray-600">
+                          C:{r.scoreConsistency} I:{r.scoreImpact} F:{r.scoreClean}
+                        </div>
                       </div>
                     </div>
+                  </button>
+                ))}
+              </div>
 
-                    <div className="text-right">
-                      <div className="text-2xl font-semibold">{r.scoreTotal}</div>
-                      <div className="text-xs text-gray-500">/ 100</div>
-                      <div className="mt-2 text-xs text-gray-600">
-                        C:{r.scoreConsistency} I:{r.scoreImpact} F:{r.scoreClean}
-                      </div>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
+              {canLoadMore && (
+                <div className="p-3 border-t">
+                  <button
+                    type="button"
+                    onClick={onLoadMore}
+                    disabled={loading}
+                    className="w-full rounded-lg border px-4 py-2 text-sm hover:bg-gray-50 disabled:opacity-60"
+                  >
+                    {loading ? "Loading..." : "Load more"}
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -155,25 +260,20 @@ export function ResultsPage() {
           <div className="font-medium">Detail</div>
 
           {!selected ? (
-            <div className="mt-2 text-sm text-gray-600">
-              Chọn 1 người ở leaderboard để xem bằng chứng.
-            </div>
+            <div className="mt-2 text-sm text-gray-600">Chọn một contributor để xem breakdown và evidence.</div>
           ) : (
             <div className="mt-3 space-y-4">
               <div>
                 <div className="font-medium">{selected.authorName}</div>
-                <div className="text-xs text-gray-600 break-all">
-                  {selected.authorEmail}
-                </div>
-                <div className="text-xs text-gray-500 mt-1 font-mono">
-                  runId: {selected.runId}
-                </div>
+                <div className="text-xs text-gray-600 break-all">{selected.authorEmail}</div>
+                <div className="text-xs text-gray-500 mt-1 font-mono">runId: {selected.runId}</div>
               </div>
 
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <MiniStat label="Total" value={selected.scoreTotal} />
                 <MiniStat label="Impact" value={selected.scoreImpact} />
                 <MiniStat label="Focus" value={selected.scoreClean} />
+                <MiniStat label="Confidence" value={selected.scoreConfidence ?? 0} />
               </div>
 
               <ExplainScore selected={selected} />
@@ -194,16 +294,15 @@ export function ResultsPage() {
                           </button>
                         </div>
 
+                        {c.subject && <div className="text-xs text-gray-700 mt-1">{c.subject}</div>}
                         <div className="text-xs text-gray-600 mt-1">
-                          coreFiles: {c.coreFiles} • noiseFiles: {c.noiseFiles} • totalFiles:{" "}
-                          {c.totalFiles}
+                          coreFiles: {c.coreFiles} • noiseFiles: {c.noiseFiles} • totalFiles: {c.totalFiles} • changedLines:{" "}
+                          {c.changedLines ?? 0}
                         </div>
                       </div>
                     ))
                   ) : (
-                    <div className="text-xs text-gray-600">
-                      Không có evidenceCommits.
-                    </div>
+                    <div className="text-xs text-gray-600">Không có evidenceCommits.</div>
                   )}
                 </div>
               </div>
@@ -223,9 +322,10 @@ export function ResultsPage() {
                             copy
                           </button>
                         </div>
-
-                        <div className="text-xs text-gray-600 mt-1 flex items-center gap-2">
+                        <div className="text-xs text-gray-600 mt-1 flex items-center gap-2 flex-wrap">
                           <span>touches: {f.touches}</span>
+                          <span>•</span>
+                          <span>changedLines: {f.changedLines ?? 0}</span>
                           <span>•</span>
                           <TagBadge tag={f.tag} />
                         </div>
@@ -244,44 +344,18 @@ export function ResultsPage() {
   );
 }
 
-function MiniStat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="border rounded-xl p-2 bg-gray-50">
-      <div className="text-xs text-gray-600">{label}</div>
-      <div className="text-lg font-semibold">{value}</div>
-    </div>
-  );
-}
-
-function TagBadge({ tag }: { tag: string }) {
-  const base =
-    "inline-flex items-center rounded-full px-2 py-0.5 text-xs border font-mono";
-
-  if (tag === "core") {
-    return <span className={`${base} bg-green-50 border-green-200`}>core</span>;
-  }
-
-  if (tag === "test") {
-    return <span className={`${base} bg-blue-50 border-blue-200`}>test</span>;
-  }
-
-  if (tag === "noise") {
-    return <span className={`${base} bg-red-50 border-red-200`}>noise</span>;
-  }
-
-  if (tag === "doc") {
-    return <span className={`${base} bg-yellow-50 border-yellow-200`}>doc</span>;
-  }
-
-  return <span className={`${base} bg-gray-50 border-gray-200`}>{tag}</span>;
-}
-
 function normalizeResultRow(row: ResultRow): ResultRow {
   return {
     ...row,
     testTouches: row.testTouches ?? 0,
     docTouches: row.docTouches ?? 0,
     otherTouches: row.otherTouches ?? 0,
+    scoreConfidence: row.scoreConfidence ?? 0,
+    spamPenalty: row.spamPenalty ?? 0,
+    activeDays: row.activeDays ?? 0,
+    activeWeeks: row.activeWeeks ?? 0,
+    tinyCommitCount: row.tinyCommitCount ?? 0,
+    impactRaw: row.impactRaw ?? 0,
     totalTouches:
       row.totalTouches ??
       row.coreTouches +
@@ -292,6 +366,34 @@ function normalizeResultRow(row: ResultRow): ResultRow {
     evidenceCommits: row.evidenceCommits ?? [],
     topFiles: row.topFiles ?? [],
   };
+}
+
+function MiniStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="border rounded-xl p-2 bg-gray-50">
+      <div className="text-xs text-gray-600">{label}</div>
+      <div className="text-lg font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function TagBadge({ tag }: { tag: string }) {
+  const base = "inline-flex items-center rounded-full px-2 py-0.5 text-xs border font-mono";
+  if (tag === "core") return <span className={`${base} bg-green-50 border-green-200`}>core</span>;
+  if (tag === "test") return <span className={`${base} bg-blue-50 border-blue-200`}>test</span>;
+  if (tag === "noise") return <span className={`${base} bg-red-50 border-red-200`}>noise</span>;
+  if (tag === "doc") return <span className={`${base} bg-yellow-50 border-yellow-200`}>doc</span>;
+  return <span className={`${base} bg-gray-50 border-gray-200`}>{tag}</span>;
+}
+
+function ConfidenceBadge({ value }: { value: number }) {
+  if (value >= 70) {
+    return <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs border bg-green-50 border-green-200">high confidence</span>;
+  }
+  if (value >= 40) {
+    return <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs border bg-yellow-50 border-yellow-200">medium confidence</span>;
+  }
+  return <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs border bg-red-50 border-red-200">low confidence</span>;
 }
 
 function ExplainScore({ selected }: { selected: ResultRow }) {
@@ -308,98 +410,37 @@ function ExplainScore({ selected }: { selected: ResultRow }) {
 
   const coreRatio = totalTouches > 0 ? selected.coreTouches / totalTouches : 0;
   const corePct = Math.round(coreRatio * 100);
-
   const cPct = Math.min(100, Math.round((selected.scoreConsistency / 30) * 100));
   const iPct = Math.min(100, Math.round((selected.scoreImpact / 50) * 100));
   const fPct = Math.min(100, Math.round((selected.scoreClean / 20) * 100));
 
-  const consistencyText =
-    selected.scoreConsistency >= 20
-      ? "Hoạt động khá đều theo thời gian (nhiều tuần có commit)."
-      : selected.scoreConsistency >= 10
-      ? "Có hoạt động nhưng chưa đều, có tuần trống."
-      : "Hoạt động chưa đều hoặc ít tuần có commit.";
-
-  const impactText =
-    selected.coreTouches >= 100
-      ? "Chạm nhiều file quan trọng (core) → tác động lớn."
-      : selected.coreTouches >= 30
-      ? "Có đóng góp vào file core nhưng mức độ vừa."
-      : "Chạm file core ít, tác động chủ yếu nhỏ/lẻ.";
-
-  const focusText =
-    corePct >= 70
-      ? "Tập trung rất mạnh vào core (tỷ lệ core cao)."
-      : corePct >= 40
-      ? "Tập trung vào core mức vừa (vẫn có test, tài liệu hoặc file phụ đáng kể)."
-      : "Tỷ lệ core thấp → thay đổi rải nhiều ngoài core (focus thấp).";
-
   return (
     <div className="border rounded-2xl p-3 bg-gray-50">
-      <div className="text-sm font-medium">Giải thích điểm (minh bạch)</div>
+      <div className="text-sm font-medium">Giải thích điểm</div>
       <div className="text-xs text-gray-600 mt-1">
-        Điểm được tính từ commit + mức “chạm” file theo nhóm
-        {" "}
-        (core, test, doc, other, noise).
-        Lưu ý: <b>Focus</b> = mức tập trung vào <b>core</b>.
+        Consistency dựa trên nhịp hoạt động theo ngày/tuần, Impact dựa trên thay đổi có trọng số theo nhóm file, Focus phản ánh mức tập trung vào core và có trừ spam/noise.
       </div>
 
       <div className="mt-3 space-y-3">
-        <ExplainRow
-          title={`Consistency: ${selected.scoreConsistency}/30`}
-          percent={cPct}
-          desc={consistencyText}
-          meta={`commits: ${selected.commitCount}`}
-        />
-
-        <ExplainRow
-          title={`Impact: ${selected.scoreImpact}/50`}
-          percent={iPct}
-          desc={impactText}
-          meta={`coreTouches: ${selected.coreTouches}`}
-        />
-
-        <ExplainRow
-          title={`Focus (core ratio): ${selected.scoreClean}/20`}
-          percent={fPct}
-          desc={focusText}
-          meta={`coreTouches: ${selected.coreTouches} • totalTouches: ${totalTouches} • coreRatio: ${corePct}%`}
-        />
-
-        <ExplainRow
-          title="Touches breakdown"
-          percent={corePct}
-          desc="Phân bố số lần chạm file theo từng nhóm để bạn đối chiếu với điểm Focus."
-          meta={`core: ${selected.coreTouches} • test: ${testTouches} • doc: ${docTouches} • other: ${otherTouches} • noise: ${selected.noiseTouches}`}
-        />
+        <ExplainRow title={`Consistency: ${selected.scoreConsistency}/30`} percent={cPct} meta={`activeDays: ${selected.activeDays ?? 0} • activeWeeks: ${selected.activeWeeks ?? 0}`} />
+        <ExplainRow title={`Impact: ${selected.scoreImpact}/50`} percent={iPct} meta={`impactRaw: ${(selected.impactRaw ?? 0).toFixed(2)} • coreTouches: ${selected.coreTouches}`} />
+        <ExplainRow title={`Focus: ${selected.scoreClean}/20`} percent={fPct} meta={`coreRatio: ${corePct}% • spamPenalty: ${selected.spamPenalty ?? 0} • tinyCommits: ${selected.tinyCommitCount ?? 0}`} />
+        <ExplainRow title={`Confidence: ${selected.scoreConfidence ?? 0}/100`} percent={Math.min(100, selected.scoreConfidence ?? 0)} meta={`commitCount: ${selected.commitCount} • totalTouches: ${totalTouches}`} />
       </div>
     </div>
   );
 }
 
-function ExplainRow({
-  title,
-  percent,
-  desc,
-  meta,
-}: {
-  title: string;
-  percent: number;
-  desc: string;
-  meta: string;
-}) {
+function ExplainRow({ title, percent, meta }: { title: string; percent: number; meta: string }) {
   return (
     <div className="bg-white border rounded-xl p-3">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-sm font-medium">{title}</div>
-          <div className="text-xs text-gray-600 mt-1">{desc}</div>
           <div className="text-xs text-gray-500 mt-1">{meta}</div>
         </div>
-
         <div className="text-xs text-gray-500">{percent}%</div>
       </div>
-
       <div className="mt-2 h-2 w-full bg-gray-100 rounded-full overflow-hidden">
         <div className="h-2 bg-black" style={{ width: `${percent}%` }} />
       </div>
