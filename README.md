@@ -1,68 +1,68 @@
 # FairGit
 
-FairGit is a full-stack system to evaluate individual contribution in team repositories using Git history.
+FairGit là hệ thống full-stack dùng lịch sử Git để đánh giá mức độ đóng góp cá nhân trong dự án làm việc nhóm.
 
-## Architecture
+## Kiến trúc hệ thống
 
-- `apps/web`: React + Vite frontend
-- `apps/api`: Express + MongoDB API
-- `services/analyzer`: BullMQ worker for repository analysis and scoring
-- `infra/docker-compose.yml`: local deployment stack (Mongo, Redis, API, Analyzer, Web)
+- `apps/web`: frontend React + Vite
+- `apps/api`: backend Express + MongoDB
+- `services/analyzer`: worker BullMQ phân tích repository và tính điểm
+- `infra/docker-compose.yml`: stack chạy local (Mongo, Redis, API, Analyzer, Web)
 
-Data flow:
+Luồng dữ liệu chính:
 
-1. User creates a run from the frontend.
-2. API creates a `Run` record and enqueues a BullMQ job.
-3. Analyzer pulls the job, fetches commits, computes scoring and evidence.
-4. Analyzer stores `Result` rows and updates run progress/status.
-5. Frontend reads run status + leaderboard + evidence.
+1. Người dùng tạo một lần phân tích (run) từ frontend.
+2. API tạo bản ghi `Run` và đẩy job vào hàng đợi BullMQ.
+3. Analyzer lấy job, đọc commit history, tính điểm và trích xuất evidence.
+4. Analyzer lưu các bản ghi `Result`, đồng thời cập nhật tiến độ/trạng thái run.
+5. Frontend đọc dữ liệu run, leaderboard và evidence để hiển thị.
 
-## Scoring (v2)
+## Mô hình chấm điểm (v2)
 
-Each contributor gets:
+Mỗi thành viên sẽ có các chỉ số:
 
-- `Consistency` (0..30): activity spread across days/weeks, with burst penalty.
-- `Impact` (0..50): weighted impact using line changes by file category (core/test/doc/other/noise).
-- `Focus` (0..20): concentration on core work, penalized for noise/tiny spam commits.
-- `Confidence` (0..100): reliability of the score based on data volume and activity spread.
+- `Consistency` (0..30): mức độ làm việc đều theo ngày/tuần, có phạt khi dồn commit bất thường.
+- `Impact` (0..50): mức tác động thực chất dựa trên thay đổi dòng code theo nhóm file (core/test/doc/other/noise).
+- `Focus` (0..20): mức tập trung vào phần việc cốt lõi, bị giảm khi có nhiều thay đổi nhiễu hoặc commit quá nhỏ.
+- `Confidence` (0..100): độ tin cậy của kết quả, phụ thuộc vào độ dày dữ liệu và độ phủ hoạt động.
 
-Fairness controls:
+Cơ chế tăng tính công bằng:
 
-- tiny commit pattern penalty
-- noise-heavy contribution penalty
-- logarithmic scaling to reduce outlier domination
-- impact normalization by P90 baseline (instead of raw max)
+- phạt mẫu tiny commit/spam commit
+- phạt khi tỷ trọng thay đổi nhiễu cao
+- chuẩn hóa log để giảm việc một vài outlier chi phối điểm
+- chuẩn hóa Impact theo mốc P90 thay vì theo giá trị lớn nhất tuyệt đối
 
-## Quick Start (Local)
+## Khởi chạy nhanh (local)
 
-Prerequisites:
+Yêu cầu:
 
 - Node.js 20+
 - pnpm
-- Docker (optional but recommended for Mongo/Redis)
+- Docker (khuyến nghị dùng cho Mongo/Redis)
 
-### 1. Start infra
+### 1. Khởi động hạ tầng nền
 
 ```bash
 cd infra
 docker compose up -d mongo redis
 ```
 
-### 2. Configure env
+### 2. Cấu hình biến môi trường
 
-Copy and adjust:
+Sao chép và chỉnh lại:
 
 - `apps/api/.env.example` -> `apps/api/.env`
 - `services/analyzer/.env.example` -> `services/analyzer/.env`
-- `apps/web/.env.example` -> `apps/web/.env` (optional)
+- `apps/web/.env.example` -> `apps/web/.env` (tùy chọn)
 
-### 3. Install dependencies
+### 3. Cài dependencies
 
 ```bash
 pnpm install
 ```
 
-### 4. Run services
+### 4. Chạy các service
 
 ```bash
 pnpm dev:api
@@ -70,7 +70,7 @@ pnpm dev:analyzer
 pnpm dev:web
 ```
 
-## Useful Commands
+## Lệnh thường dùng
 
 ```bash
 pnpm typecheck
@@ -80,7 +80,7 @@ pnpm --filter api seed:admin
 pnpm --filter api seed:users
 ```
 
-## Docker Compose (Full stack)
+## Chạy full stack bằng Docker Compose
 
 ```bash
 cd infra
@@ -89,10 +89,10 @@ docker compose up --build
 
 - Web: http://localhost:8080
 - API: http://localhost:4000
-- Mongo: localhost:27017
+- MongoDB: localhost:27017
 - Redis: localhost:6379
 
-## Default Seed Accounts
+## Tài khoản mẫu (seed mặc định)
 
 - `admin@fairgit.local` / `Admin123!`
 - `manager@fairgit.local` / `Manager123!`
