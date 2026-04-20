@@ -1,6 +1,7 @@
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
+buildArgs = { VITE_API_BASE_URL = "${{VITE_API_BASE_URL}}" }
 
 [deploy]
 healthcheckPath = "/"
