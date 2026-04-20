@@ -5,11 +5,14 @@ import { ensureRepo, getRecentCommits } from "./commitExtract";
 import { scoreFromCommitsWithFiles } from "./scoreByFiles";
 import { env } from "./env";
 
-const connection = new IORedis({
-  host: env.REDIS_HOST,
-  port: env.REDIS_PORT,
-  maxRetriesPerRequest: null,
-});
+const connection = env.REDIS_URL
+  ? new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null })
+  : new IORedis({
+      host: env.REDIS_HOST,
+      port: env.REDIS_PORT,
+      password: env.REDIS_PASSWORD,
+      maxRetriesPerRequest: null,
+    });
 
 // Schema tối thiểu để analyzer cập nhật tiến độ mà không phụ thuộc chặt vào API package.
 const RunSchema = new mongoose.Schema(

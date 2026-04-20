@@ -10,9 +10,11 @@ function readInt(name: string, fallback: number, min: number, max: number) {
 }
 
 export const env = {
-  MONGO_URI: process.env.MONGO_URI || "mongodb://localhost:27017/fairgit",
+  MONGO_URI: process.env.MONGO_URL || process.env.MONGO_URI || "mongodb://localhost:27017/fairgit",
+  REDIS_URL: process.env.REDIS_URL,
   REDIS_HOST: process.env.REDIS_HOST || "127.0.0.1",
   REDIS_PORT: readInt("REDIS_PORT", 6379, 1, 65535),
+  REDIS_PASSWORD: process.env.REDIS_PASSWORD || process.env.REDISPASSWORD,
   ANALYZER_CONCURRENCY: readInt("ANALYZER_CONCURRENCY", 1, 1, 16),
   ANALYSIS_LOOKBACK_DAYS: readInt("ANALYSIS_LOOKBACK_DAYS", 90, 7, 365),
   ANALYSIS_MAX_COMMITS: readInt("ANALYSIS_MAX_COMMITS", 5000, 100, 50000),

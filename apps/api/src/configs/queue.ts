@@ -2,11 +2,14 @@ import { Queue } from "bullmq";
 import IORedis from "ioredis";
 import { env } from "./env";
 
-const connection = new IORedis({
-  host: env.REDIS_HOST,
-  port: env.REDIS_PORT,
-  maxRetriesPerRequest: null,
-});
+const connection = env.REDIS_URL
+  ? new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null })
+  : new IORedis({
+      host: env.REDIS_HOST,
+      port: env.REDIS_PORT,
+      password: env.REDIS_PASSWORD,
+      maxRetriesPerRequest: null,
+    });
 
 export const analysisQueue = new Queue("analysis", {
   connection,

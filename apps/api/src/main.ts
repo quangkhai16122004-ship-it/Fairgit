@@ -13,10 +13,24 @@ import { requestLog } from "./middlewares/requestLog";
 import { createRateLimiter } from "./middlewares/rateLimit";
 
 const app = express();
+const allowedCorsOrigins = new Set(env.corsOrigins);
 
 app.use(
   cors({
-    origin: env.CORS_ORIGIN,
+    origin(origin, callback) {
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      const normalizedOrigin = origin.replace(/\/+$/, "");
+      if (allowedCorsOrigins.has(normalizedOrigin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error(`Origin ${origin} not allowed by CORS`));
+    },
     credentials: true,
   })
 );

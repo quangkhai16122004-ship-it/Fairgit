@@ -13,6 +13,9 @@ export function toErrorMessage(error: unknown, fallback = "Request failed") {
     const e = error as MaybeHttpError;
     const fromApi = e.response?.data?.error ?? e.response?.data?.message;
     if (typeof fromApi === "string" && fromApi.trim()) return fromApi;
+    if (typeof e.message === "string" && e.message.trim() === "Network Error") {
+      return "Cannot connect to API. Check API server and CORS_ORIGIN.";
+    }
     if (typeof e.message === "string" && e.message.trim()) return e.message;
   }
   return fallback;
