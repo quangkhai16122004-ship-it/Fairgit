@@ -5,21 +5,21 @@ import { User } from "./models/User";
 
 dotenv.config();
 
+export async function seedAdmin() {
+  const email = "admin@fairgit.local";
+  const password = "Admin123!";
+  const existing = await User.findOne({ email });
+  if (existing) return;
+  const passwordHash = await bcrypt.hash(password, 10);
+  await User.create({ email, passwordHash, role: "admin" });
+  console.log("✅ Seeded admin:", email);
+}
+
 async function main() {
   const MONGO_URI = process.env.MONGO_URL || process.env.MONGO_URI || "mongodb://localhost:27017/fairgit";
   await mongoose.connect(MONGO_URI);
-
-  const email = "admin@fairgit.local";
-  const password = "Admin123!";
-  const passwordHash = await bcrypt.hash(password, 10);
-
-  await User.updateOne(
-    { email },
-    { $setOnInsert: { email, passwordHash, role: "admin" } },
-    { upsert: true }
-  );
-
-  console.log("✅ Seeded admin:", email, password);
+  await seedAdmin();
+  console.log("✅ Seed complete");
   process.exit(0);
 }
 

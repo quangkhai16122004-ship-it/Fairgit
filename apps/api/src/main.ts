@@ -11,6 +11,7 @@ import { dashboardRouter } from "./routes/dashboard.routes";
 import { env } from "./configs/env";
 import { requestLog } from "./middlewares/requestLog";
 import { createRateLimiter } from "./middlewares/rateLimit";
+import { seedAdmin } from "./seed";
 
 const app = express();
 const allowedCorsOrigins = new Set(env.corsOrigins);
@@ -62,6 +63,8 @@ const MONGO_URI = env.MONGO_URI;
 async function start() {
   await mongoose.connect(MONGO_URI);
   console.log("✅ Connected to MongoDB:", MONGO_URI);
+
+  await seedAdmin();
 
   app.listen(env.PORT, () => {
     console.log(`✅ API listening on http://localhost:${env.PORT}`);
