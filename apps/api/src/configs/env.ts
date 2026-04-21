@@ -1,7 +1,6 @@
 import dotenv from "dotenv";
 import { z } from "zod";
 
-console.log("🔍 RAW process.env.CORS_ORIGIN:", process.env.CORS_ORIGIN);
 dotenv.config();
 
 const EnvSchema = z.object({
@@ -14,7 +13,7 @@ const EnvSchema = z.object({
   REDIS_PORT: z.coerce.number().int().positive().default(6379),
   REDIS_PASSWORD: z.string().optional(),
 
-  CORS_ORIGIN: z.string().min(1).default("http://localhost:5173,http://127.0.0.1:5173"),
+  API_CORS_ORIGIN: z.string().min(1).default("http://localhost:5173,http://127.0.0.1:5173"),
   JWT_SECRET: z.string().min(12).default("dev_secret_change_me_unsafe"),
   AUTH_COOKIE_NAME: z.string().min(1).default("fg_token"),
   AUTH_COOKIE_SECURE: z.enum(["true", "false"]).default("false"),
@@ -71,7 +70,7 @@ if (!parsed.success) {
 
 export const env = {
   ...parsed.data,
-  corsOrigins: parseCorsOrigins(parsed.data.CORS_ORIGIN),
+  corsOrigins: parseCorsOrigins(parsed.data.API_CORS_ORIGIN),
   authCookieSecure: parsed.data.AUTH_COOKIE_SECURE === "true",
 };
 
