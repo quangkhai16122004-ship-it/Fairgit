@@ -10,6 +10,7 @@ RUN npm run build
 FROM node:20-alpine AS runtime
 WORKDIR /app
 
+RUN apk add --no-cache git
 ENV NODE_ENV=production
 COPY package.json ./
 RUN npm install --omit=dev
