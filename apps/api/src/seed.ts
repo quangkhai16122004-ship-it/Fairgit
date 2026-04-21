@@ -6,7 +6,7 @@ import { User } from "./models/User";
 dotenv.config();
 
 async function main() {
-  const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/fairgit";
+  const MONGO_URI = process.env.MONGO_URL || process.env.MONGO_URI || "mongodb://localhost:27017/fairgit";
   await mongoose.connect(MONGO_URI);
 
   const email = "admin@fairgit.local";
