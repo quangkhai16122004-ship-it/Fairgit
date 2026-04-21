@@ -14,6 +14,7 @@ import { createRateLimiter } from "./middlewares/rateLimit";
 
 const app = express();
 const allowedCorsOrigins = new Set(env.corsOrigins);
+console.log("🔍 CORS allowed origins:", [...allowedCorsOrigins]);
 
 app.use(
   cors({
