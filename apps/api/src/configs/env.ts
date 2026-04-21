@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 import { z } from "zod";
 
+console.log("🔍 RAW process.env.CORS_ORIGIN:", process.env.CORS_ORIGIN);
 dotenv.config();
 
 const EnvSchema = z.object({
