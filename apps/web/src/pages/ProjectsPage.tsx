@@ -2,8 +2,11 @@ import React from "react";
 import { createProject, listProjects } from "../lib/projects";
 import type { Project } from "../lib/projects";
 import { toErrorMessage } from "../lib/errorMessage";
+import { useLang } from "../app/LanguageContext";
+import { translations as T, tr } from "../lib/translations";
 
 export function ProjectsPage() {
+  const { lang } = useLang();
   const [items, setItems] = React.useState<Project[]>([]);
   const [loading, setLoading] = React.useState(true);
 
@@ -32,8 +35,8 @@ export function ProjectsPage() {
     setError(null);
 
     try {
-      if (!name.trim()) throw new Error("Tên project không được rỗng");
-      if (!repoUrl.trim()) throw new Error("Repo URL không được rỗng");
+      if (!name.trim()) throw new Error(tr(T.projects.nameRequired, lang));
+      if (!repoUrl.trim()) throw new Error(tr(T.projects.urlRequired, lang));
 
       await createProject({ name: name.trim(), repoUrl: repoUrl.trim() });
       setName("");
@@ -46,28 +49,29 @@ export function ProjectsPage() {
     }
   }
 
+  const p = T.projects;
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold">Projects</h1>
-        <p className="text-sm text-gray-600 mt-1">Tạo project bằng repo URL để chạy đánh giá.</p>
+        <h1 className="text-xl font-semibold">{tr(p.title, lang)}</h1>
+        <p className="text-sm text-gray-600 mt-1">{tr(p.subtitle, lang)}</p>
       </div>
 
-      {/* Create form */}
       <form onSubmit={onCreate} className="bg-white border rounded-2xl p-4">
         <div className="grid gap-3 md:grid-cols-3">
           <div>
-            <div className="text-xs text-gray-600 mb-1">Tên project</div>
+            <div className="text-xs text-gray-600 mb-1">{tr(p.projectName, lang)}</div>
             <input
               className="w-full border rounded-lg px-3 py-2"
-              placeholder="Demo Project"
+              placeholder={tr(p.namePlaceholder, lang)}
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
           </div>
 
           <div className="md:col-span-2">
-            <div className="text-xs text-gray-600 mb-1">Repo URL</div>
+            <div className="text-xs text-gray-600 mb-1">{tr(p.repoUrl, lang)}</div>
             <input
               className="w-full border rounded-lg px-3 py-2"
               placeholder="https://github.com/facebook/react"
@@ -84,7 +88,7 @@ export function ProjectsPage() {
             disabled={saving}
             className="rounded-lg bg-black text-white px-4 py-2 text-sm disabled:opacity-60"
           >
-            {saving ? "Creating..." : "Create project"}
+            {saving ? tr(p.creating, lang) : tr(p.createProject, lang)}
           </button>
 
           <button
@@ -92,28 +96,27 @@ export function ProjectsPage() {
             onClick={refresh}
             className="rounded-lg border px-4 py-2 text-sm hover:bg-gray-50"
           >
-            Refresh
+            {tr(p.refresh, lang)}
           </button>
         </div>
       </form>
 
-      {/* List */}
       <div className="bg-white border rounded-2xl overflow-hidden">
         <div className="px-4 py-3 border-b flex items-center justify-between">
-          <div className="font-medium">Danh sách ({items.length})</div>
+          <div className="font-medium">{tr(p.list, lang)} ({items.length})</div>
         </div>
 
         {loading ? (
-          <div className="p-4 text-sm text-gray-600">Loading...</div>
+          <div className="p-4 text-sm text-gray-600">{tr(p.loading, lang)}</div>
         ) : items.length === 0 ? (
-          <div className="p-4 text-sm text-gray-600">Chưa có project nào.</div>
+          <div className="p-4 text-sm text-gray-600">{tr(p.noProjects, lang)}</div>
         ) : (
           <div className="divide-y">
-            {items.map((p) => (
-              <div key={p._id} className="p-4">
-                <div className="font-medium">{p.name}</div>
-                <div className="text-sm text-gray-600 break-all">{p.repoUrl}</div>
-                <div className="text-xs text-gray-500 mt-1">id: {p._id}</div>
+            {items.map((item) => (
+              <div key={item._id} className="p-4">
+                <div className="font-medium">{item.name}</div>
+                <div className="text-sm text-gray-600 break-all">{item.repoUrl}</div>
+                <div className="text-xs text-gray-500 mt-1">id: {item._id}</div>
               </div>
             ))}
           </div>

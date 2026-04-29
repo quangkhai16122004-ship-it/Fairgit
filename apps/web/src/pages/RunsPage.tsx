@@ -3,11 +3,14 @@ import { useNavigate } from "react-router-dom";
 import { listProjects, type Project } from "../lib/projects";
 import { createRun, getRun, listRuns, type Run, type RunStatus } from "../lib/runs";
 import { toErrorMessage } from "../lib/errorMessage";
+import { useLang } from "../app/LanguageContext";
+import { translations as T, tr } from "../lib/translations";
 
 const LAST_RUN_KEY = "fairgit:lastRunId";
 
 export function RunsPage() {
   const nav = useNavigate();
+  const { lang } = useLang();
 
   const [projects, setProjects] = React.useState<Project[]>([]);
   const [loadingProjects, setLoadingProjects] = React.useState(true);
@@ -91,7 +94,7 @@ export function RunsPage() {
     setError(null);
     setCreating(true);
     try {
-      if (!projectId) throw new Error("Chọn project trước");
+      if (!projectId) throw new Error(tr(T.runs.selectProjectFirst, lang));
       const run = await createRun(projectId);
       setActiveRun(run);
       localStorage.setItem(LAST_RUN_KEY, run._id);
@@ -113,19 +116,21 @@ export function RunsPage() {
     localStorage.setItem(LAST_RUN_KEY, run._id);
   }
 
+  const ru = T.runs;
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold">Runs</h1>
-        <p className="text-sm text-gray-600 mt-1">Tạo run phân tích, theo dõi tiến độ, và mở kết quả ngay khi hoàn tất.</p>
+        <h1 className="text-xl font-semibold">{tr(ru.title, lang)}</h1>
+        <p className="text-sm text-gray-600 mt-1">{tr(ru.subtitle, lang)}</p>
       </div>
 
       <div className="bg-white border rounded-2xl p-4 space-y-4">
         <div className="grid gap-3 lg:grid-cols-6">
           <div className="lg:col-span-3">
-            <div className="text-xs text-gray-600 mb-1">Project</div>
+            <div className="text-xs text-gray-600 mb-1">{tr(ru.project, lang)}</div>
             {loadingProjects ? (
-              <div className="text-sm text-gray-600">Loading projects...</div>
+              <div className="text-sm text-gray-600">{tr(ru.loadingProjects, lang)}</div>
             ) : (
               <select
                 className="w-full border rounded-lg px-3 py-2"
@@ -142,17 +147,17 @@ export function RunsPage() {
           </div>
 
           <div className="lg:col-span-2">
-            <div className="text-xs text-gray-600 mb-1">Status filter</div>
+            <div className="text-xs text-gray-600 mb-1">{tr(ru.statusFilter, lang)}</div>
             <select
               className="w-full border rounded-lg px-3 py-2"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as RunStatus | "all")}
             >
-              <option value="all">All</option>
-              <option value="pending">Pending</option>
-              <option value="running">Running</option>
-              <option value="done">Done</option>
-              <option value="failed">Failed</option>
+              <option value="all">{tr(ru.all, lang)}</option>
+              <option value="pending">{tr(ru.pending, lang)}</option>
+              <option value="running">{tr(ru.running, lang)}</option>
+              <option value="done">{tr(ru.done, lang)}</option>
+              <option value="failed">{tr(ru.failed, lang)}</option>
             </select>
           </div>
 
@@ -162,7 +167,7 @@ export function RunsPage() {
               onClick={() => void loadRuns()}
               className="w-full rounded-lg border px-4 py-2 text-sm hover:bg-gray-50"
             >
-              Refresh
+              {tr(ru.refresh, lang)}
             </button>
           </div>
         </div>
@@ -179,16 +184,16 @@ export function RunsPage() {
             onClick={onRun}
             className="rounded-lg bg-black text-white px-4 py-2 text-sm disabled:opacity-60"
           >
-            {creating ? "Starting..." : "Run analysis"}
+            {creating ? tr(ru.starting, lang) : tr(ru.runAnalysis, lang)}
           </button>
         </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-1 bg-white border rounded-2xl p-4">
-          <div className="font-medium">Run detail</div>
+          <div className="font-medium">{tr(ru.runDetail, lang)}</div>
           {!activeRun ? (
-            <div className="mt-2 text-sm text-gray-600">Chọn run bên phải để xem chi tiết.</div>
+            <div className="mt-2 text-sm text-gray-600">{tr(ru.selectRun, lang)}</div>
           ) : (
             <div className="mt-3 space-y-3 text-sm">
               <div>
@@ -222,7 +227,7 @@ export function RunsPage() {
                   className="mt-2 rounded-lg border px-4 py-2 text-sm hover:bg-gray-50"
                   onClick={() => nav(`/results?runId=${activeRun._id}`)}
                 >
-                  View results
+                  {tr(ru.viewResults, lang)}
                 </button>
               )}
             </div>
@@ -231,14 +236,14 @@ export function RunsPage() {
 
         <div className="lg:col-span-2 bg-white border rounded-2xl overflow-hidden">
           <div className="px-4 py-3 border-b flex items-center justify-between">
-            <div className="font-medium">Recent runs</div>
-            <div className="text-xs text-gray-500">{runs.length} items</div>
+            <div className="font-medium">{tr(ru.recentRuns, lang)}</div>
+            <div className="text-xs text-gray-500">{runs.length} {tr(T.common.items, lang)}</div>
           </div>
 
           {loadingRuns ? (
-            <div className="p-4 text-sm text-gray-600">Loading runs...</div>
+            <div className="p-4 text-sm text-gray-600">{tr(ru.loadingRuns, lang)}</div>
           ) : runs.length === 0 ? (
-            <div className="p-4 text-sm text-gray-600">Chưa có run nào cho bộ lọc hiện tại.</div>
+            <div className="p-4 text-sm text-gray-600">{tr(ru.noRuns, lang)}</div>
           ) : (
             <div className="divide-y">
               {runs.map((r) => (
