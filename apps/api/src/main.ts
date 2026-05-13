@@ -8,6 +8,7 @@ import { projectRouter } from "./routes/project.routes";
 import { runRouter } from "./routes/run.routes";
 import { resultRouter } from "./routes/result.routes";
 import { dashboardRouter } from "./routes/dashboard.routes";
+import { userRouter } from "./routes/user.routes";
 import { env } from "./configs/env";
 import { requestLog } from "./middlewares/requestLog";
 import { createRateLimiter } from "./middlewares/rateLimit";
@@ -52,6 +53,7 @@ app.use("/projects", projectRouter);
 app.use("/runs", runRouter);
 app.use("/runs", resultRouter);
 app.use("/auth", authRoutes);
+app.use("/users", userRouter);
 app.use(dashboardRouter);
 
 app.get("/health", (_req, res) => {

@@ -18,3 +18,12 @@ export async function createProject(input: { name: string; repoUrl: string }) {
   const res = await api.post("/projects", input);
   return res.data as Project;
 }
+
+export async function updateProject(id: string, input: { name?: string; repoUrl?: string }) {
+  const res = await api.patch(`/projects/${id}`, input);
+  return res.data as Project;
+}
+
+export async function deleteProject(id: string) {
+  await api.delete(`/projects/${id}`);
+}

@@ -3,12 +3,15 @@ import { useNavigate } from "react-router-dom";
 import { copyText } from "../lib/clipboard";
 import { getDashboardSummary, type DashboardSummary } from "../lib/dashboard";
 import { toErrorMessage } from "../lib/errorMessage";
+import { useAuth } from "../app/AuthProvider";
 import { useLang } from "../app/LanguageContext";
 import { translations as T, tr } from "../lib/translations";
 
 export function DashboardPage() {
   const nav = useNavigate();
   const { lang } = useLang();
+  const { state } = useAuth();
+  const canManageRuns = state.status === "authed" && (state.role === "admin" || state.role === "manager");
   const [data, setData] = React.useState<DashboardSummary | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -118,9 +121,11 @@ export function DashboardPage() {
                   {tr(d.viewResults, lang)}
                 </button>
 
-                <button className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50" onClick={() => nav("/runs")}>
-                  {tr(d.goToRuns, lang)}
-                </button>
+                {canManageRuns && (
+                  <button className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50" onClick={() => nav("/runs")}>
+                    {tr(d.goToRuns, lang)}
+                  </button>
+                )}
               </div>
 
               {latestRun.error && (

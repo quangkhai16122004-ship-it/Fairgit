@@ -35,7 +35,12 @@ export function AppLayout() {
               </>
             )}
 
+            {state.status === "authed" && state.role === "admin" && (
+              <NavItem to="/users">{tr(T.nav.users, lang)}</NavItem>
+            )}
+
             <NavItem to="/results">{tr(T.nav.results, lang)}</NavItem>
+            <NavItem to="/profile">{tr(T.nav.profile, lang)}</NavItem>
           </nav>
         </aside>
 

@@ -22,6 +22,10 @@ export async function getRun(runId: string) {
   return Run.findById(runId).lean();
 }
 
+export async function deleteRun(runId: string) {
+  return Run.findByIdAndDelete(runId);
+}
+
 export async function listRuns(input: {
   projectId?: string;
   status?: "pending" | "running" | "done" | "failed";

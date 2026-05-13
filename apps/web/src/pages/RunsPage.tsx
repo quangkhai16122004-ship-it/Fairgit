@@ -1,8 +1,9 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { listProjects, type Project } from "../lib/projects";
-import { createRun, getRun, listRuns, type Run, type RunStatus } from "../lib/runs";
+import { createRun, getRun, listRuns, deleteRun, type Run, type RunStatus } from "../lib/runs";
 import { toErrorMessage } from "../lib/errorMessage";
+import { useAuth } from "../app/AuthProvider";
 import { useLang } from "../app/LanguageContext";
 import { translations as T, tr } from "../lib/translations";
 
@@ -11,6 +12,8 @@ const LAST_RUN_KEY = "fairgit:lastRunId";
 export function RunsPage() {
   const nav = useNavigate();
   const { lang } = useLang();
+  const { state } = useAuth();
+  const isAdmin = state.status === "authed" && state.role === "admin";
 
   const [projects, setProjects] = React.useState<Project[]>([]);
   const [loadingProjects, setLoadingProjects] = React.useState(true);
@@ -114,6 +117,17 @@ export function RunsPage() {
   function pickRun(run: Run) {
     setActiveRun(run);
     localStorage.setItem(LAST_RUN_KEY, run._id);
+  }
+
+  async function onDeleteRun(run: Run) {
+    if (!window.confirm(tr(T.users.confirmDeleteRun, lang))) return;
+    try {
+      await deleteRun(run._id);
+      setRuns((prev) => prev.filter((r) => r._id !== run._id));
+      if (activeRun?._id === run._id) setActiveRun(null);
+    } catch (e: unknown) {
+      setError(toErrorMessage(e, "Delete run failed"));
+    }
   }
 
   const ru = T.runs;
@@ -267,8 +281,16 @@ export function RunsPage() {
                       </div>
                     </div>
 
-                    <div className="text-right shrink-0">
+                    <div className="flex flex-col items-end gap-1 shrink-0">
                       <StatusBadge status={r.status} />
+                      {isAdmin && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); void onDeleteRun(r); }}
+                          className="rounded border border-red-200 px-1.5 py-0.5 text-xs text-red-500 hover:bg-red-50"
+                        >
+                          {tr(T.users.deleteRun, lang)}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </button>

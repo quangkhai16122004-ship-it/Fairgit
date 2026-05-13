@@ -57,3 +57,7 @@ export async function createRun(projectId: string) {
   const { data } = await api.post<Run>(`/projects/${projectId}/runs`);
   return data;
 }
+
+export async function deleteRun(id: string) {
+  await api.delete(`/runs/${id}`);
+}

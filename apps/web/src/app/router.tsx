@@ -6,6 +6,8 @@ import { DashboardPage } from "../pages/DashboardPage";
 import { ProjectsPage } from "../pages/ProjectsPage";
 import { RunsPage } from "../pages/RunsPage";
 import { ResultsPage } from "../pages/ResultsPage";
+import { UsersPage } from "../pages/UsersPage";
+import { ProfilePage } from "../pages/ProfilePage";
 import { RequireAuth } from "./RequireAuth";
 
 export const router = createBrowserRouter([
@@ -31,8 +33,17 @@ export const router = createBrowserRouter([
             ],
           },
 
+          // chỉ admin
+          {
+            element: <RequireAuth allowRoles={["admin"]} />,
+            children: [
+              { path: "users", element: <UsersPage /> },
+            ],
+          },
+
           // mọi role đều xem được
           { path: "results", element: <ResultsPage /> },
+          { path: "profile", element: <ProfilePage /> },
         ],
       },
     ],

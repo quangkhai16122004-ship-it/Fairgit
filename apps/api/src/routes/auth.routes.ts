@@ -5,6 +5,7 @@ import { z } from "zod";
 import { User } from "../models/User";
 import { env } from "../configs/env";
 import { createRateLimiter } from "../middlewares/rateLimit";
+import { requireAuth } from "../middlewares/auth";
 
 const router = Router();
 const loginRateLimit = createRateLimiter(env.LOGIN_RATE_LIMIT_WINDOW_MS, env.LOGIN_RATE_LIMIT_MAX);
@@ -109,6 +110,36 @@ router.post("/logout", async (_req, res) => {
     sameSite: env.AUTH_COOKIE_SAME_SITE,
     secure: env.authCookieSecure,
   });
+  return res.json({ ok: true });
+});
+
+const ChangePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z
+    .string()
+    .min(8, "Mật khẩu tối thiểu 8 ký tự")
+    .max(128)
+    .regex(/[A-Z]/, "Phải có chữ hoa")
+    .regex(/[a-z]/, "Phải có chữ thường")
+    .regex(/[0-9]/, "Phải có chữ số"),
+});
+
+router.patch("/password", requireAuth, async (req, res) => {
+  const parsed = ChangePasswordSchema.safeParse(req.body);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    return res.status(400).json({ error: issue?.message ?? "Invalid payload" });
+  }
+
+  const user = await User.findById(req.auth!.userId);
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  const ok = await bcrypt.compare(parsed.data.currentPassword, user.passwordHash);
+  if (!ok) return res.status(400).json({ error: "Mật khẩu hiện tại không đúng" });
+
+  user.passwordHash = await bcrypt.hash(parsed.data.newPassword, 10);
+  await user.save();
+
   return res.json({ ok: true });
 });
 
